@@ -109,15 +109,122 @@ volumes:
   redis_data:
 ```
 
-### Staging Environment
+### Intermediate Deployment Option - Docker Swarm
+
+**For teams not ready for full Kubernetes complexity:**
+
+```yaml
+# docker-stack.yml
+version: '3.8'
+
+services:
+  api:
+    image: flowforge/api:latest
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    environment:
+      DATABASE_URL: postgresql://user:pass@postgres/flowforge
+      REDIS_URL: redis://redis:6379
+    networks:
+      - flowforge
+    secrets:
+      - anthropic_api_key
+      - jwt_secret
+
+  worker:
+    image: flowforge/worker:latest
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.worker == true
+    networks:
+      - flowforge
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    secrets:
+      - anthropic_api_key
+
+  postgres:
+    image: postgres:15
+    deploy:
+      placement:
+        constraints:
+          - node.labels.db == true
+    environment:
+      POSTGRES_DB: flowforge
+      POSTGRES_USER: flowforge
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - flowforge
+
+  redis:
+    image: redis:7-alpine
+    deploy:
+      replicas: 1
+    networks:
+      - flowforge
+
+networks:
+  flowforge:
+    driver: overlay
+    attachable: true
+
+volumes:
+  postgres_data:
+    driver: local
+
+secrets:
+  anthropic_api_key:
+    external: true
+  jwt_secret:
+    external: true
+```
+
+### Lightweight Kubernetes Option - K3s
+
+**Perfect for small to medium deployments:**
+
+```bash
+#!/bin/bash
+# install-k3s.sh
+
+# Install K3s with embedded etcd
+curl -sfL https://get.k3s.io | sh -s - \
+  --cluster-init \
+  --disable traefik \
+  --write-kubeconfig-mode 644 \
+  --etcd-snapshot-schedule-cron "0 */6 * * *"
+
+# Install Nginx Ingress
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.1/deploy/static/provider/cloud/deploy.yaml
+
+# Install cert-manager
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+
+# Deploy FlowForge
+helm install flowforge ./helm/flowforge \
+  --set global.storageClass=local-path \
+  --set postgresql.enabled=true \
+  --set redis.enabled=true
+```
+
+### Staging Environment - Managed Kubernetes
 
 ```mermaid
 graph TD
-    subgraph "Cloud Provider"
-        subgraph "Kubernetes Cluster"
+    subgraph "Cloud Provider (AWS/GCP/Azure)"
+        subgraph "Managed Kubernetes (EKS/GKE/AKS)"
             subgraph "Ingress"
-                LB[Load Balancer]
+                LB[Cloud Load Balancer]
                 Nginx[Nginx Ingress]
+                CertMgr[Cert Manager]
             end
             
             subgraph "Application Namespace"
@@ -139,8 +246,9 @@ graph TD
         end
         
         subgraph "Managed Services"
-            S3[S3 Bucket]
-            Vault[Vault]
+            S3[Object Storage]
+            Vault[Secrets Manager]
+            CDN[CDN Service]
         end
     end
     
@@ -152,6 +260,7 @@ graph TD
     Worker --> Redis
     API --> S3
     API --> Vault
+    UI --> CDN
 ```
 
 ### Production Environment
