@@ -21,3 +21,10 @@ The up-to-date documentation for any library can be found using the context7 too
 ## Frontend Applications
 
 Prefer Client Side Rendering (CSR) where possible.
+
+
+
+## GitHub Issue Management
+
+GitHub Project: https://github.com/orgs/prodigy-sln/projects/4
+GitHub Repository: https://github.com/prodigy-sln/flowforge
